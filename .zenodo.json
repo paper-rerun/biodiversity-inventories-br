@@ -1,0 +1,25 @@
+{
+  "title": "Biodiversity inventories in Brazil: 1,152 species occurrences from 8 Embrapa publications (pilot)",
+  "upload_type": "dataset",
+  "description": "1,152 species occurrences from 105 sampling events, transcribed in Darwin Core terms from the species tables of 8 open-access Embrapa publications (1982-2014): fish of the Taquari River floodplain and birds of Nhumirim ranch (Pantanal, MS), bats of Fênix (Atlantic Forest, PR), saturniid moths in Cerrado fragments (RO and GO), amphibians and reptiles of Ouricuri and trees and shrubs near Petrolina (Caatinga, PE), mammals and game birds in Acre and trees, palms and understory of the Tapajós National Forest (Amazon, AC and PA). Two files joined on eventID: events (study, site, point, plot, habitat unit, stratum or field day, with locality, printed date and coordinates, habitat, protocol and effort) and occurrences (scientific name as printed, qualifier, family, order, presence or absence, count or quantity, basis of record, page and table of origin). Names, dates and coordinates are kept exactly as printed; there are no ISO dates or decimal coordinates yet. Each document was checked against GBIF before transcription and none had its records there. Each document was transcribed twice, independently, by AI agents, and every disagreement was settled against the PDF; the 529 distinct names were matched against the GBIF backbone as a check. A human reviewed the result before publication. Pilot of 8 documents; part of the Paper Rerun project (Open Tables).",
+  "creators": [
+    {
+      "name": "Tessaro, Filipe"
+    }
+  ],
+  "license": "cc-by-4.0",
+  "keywords": [
+    "biodiversity",
+    "species occurrence",
+    "Darwin Core",
+    "Pantanal",
+    "Cerrado",
+    "Caatinga",
+    "Atlantic Forest",
+    "Amazon",
+    "Brazil",
+    "Embrapa",
+    "open data",
+    "AI agents"
+  ]
+}

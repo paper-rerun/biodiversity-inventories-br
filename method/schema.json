@@ -1,0 +1,1486 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "biodiversidade-piloto/schema.json",
+ "title": "Brazilian fauna and flora inventories in Portuguese-language technical literature, one Darwin Core occurrence per printed taxon-by-event cell or list line",
+ "version": "1.0-pilot",
+ "description": "Fixed output format for every blind transcriber of the biodiversity pilot. Each document gives one JSON object {doc_id, transcriber, schema_version, events, tables, records, end_checklist}. events holds each site or sampling event once, with its printed locality, coordinates, dates, habitat, method and effort and the page of each; a child event inherits what its parent prints. tables is the inventory of every table, annex, figure and text block that names taxa, with its cell count closed, its axes, its symbols and their printed meanings, and one columns[] entry per printed column with its role. Every record points to its event_id, table_id and column_id. Field names follow Darwin Core where a term exists (verbatimLocality, verbatimCoordinates, verbatimEventDate, habitat, samplingProtocol, samplingEffort, verbatimScientificName, identificationQualifier, vernacularName, occurrenceStatus, individualCount, organismQuantity, organismQuantityType); fields ending in _as_printed hold printed text for which the Darwin Core term will be filled in a later step. The transcription copies what is printed and never computes, converts, infers or resolves names. Carried over from the agricultural rounds (batata/schema.json v8, rules 2, 3, 17, 18, 35, 41, 46, 48, 49): inventory first with a closed cell count per table, read from the rendered page, copy exactly as printed, never compute or infer, illegible cells stay in, contradictions recorded with both versions, page from the PDF, short quotes only, end-of-transcription checklist, two independent transcriptions with diff and adjudication. Source PDFs and record pages are in sources.json.",
+ "rules": [
+  "1 SCOPE. Inventory and transcribe every page of the document, except when sources.json gives extract_pages for it. Then only those pages go to tables[] and records[]; the rest is read only to fill events[] (methods, site descriptions, dates, effort).",
+  "2 INVENTORY FIRST. Before writing any record, render every page in scope and list every table, annex, figure and text block that names taxa in tables[], in page order, with table_id, page, label, kind and the number of data cells. A table continued on the next page gets one entry per page, each with its own count. At the end fill transcribed and skipped_cells: data_cells = transcribed + skipped_cells and transcribed = number of records with that table_id. A document is not finished until every entry closes.",
+  "3 Read names and numbers from the rendered page, not only from the text layer. The printed page is the source: text layers of typewritten scans and two-column journals drop letters, split words and misplace columns ('FamOia' for 'Família', a name broken over three lines). Render at 150 dpi; go up only for one unreadable character.",
+  "4 EVENTS FIRST. One events[] entry per site or sampling event the document distinguishes: a study-wide event for the whole survey, then one per site, point, plot, transect, fragment, farm, habitat or stratum that has its own column, code or table, and one per campaign or date block when the tables split the data by campaign. Children point to their parent in parent_event_id. A record always points to the most specific event its cell belongs to. Fix the event structure before writing records.",
+  "5 EVENT FIELDS ONCE, WITH PAGE. Fill each event field from wherever the document prints it (methods, site table, caption, footnote, figure legend, abstract) and put the page in field_pages. A field printed once for the whole survey goes on the study event and the children inherit it; a child only repeats it when its own value differs. Use null only when the document prints it nowhere. Never take a locality from the authors' affiliation, the publisher's address or the series name: Embrapa Pantanal, Corumbá is the publisher, not the site.",
+  "6 COORDINATES AS PRINTED. verbatimCoordinates is the printed text exactly, with degree, minute and second signs, hemisphere letters ('O' or 'W') and separators as printed ('18°14'10\"S - 55°40'41\"O'). decimalLatitude and decimalLongitude are filled only when the document prints the coordinate in decimal degrees, and then they copy it. Never convert degrees-minutes-seconds, UTM or a map position to decimal, never add a missing sign or hemisphere, never fix a coordinate that falls outside the site: write the conflict in source_inconsistency. geodeticDatum and verbatimCoordinateSystem only when printed.",
+  "7 DATES AS PRINTED. verbatimEventDate is the printed text ('entre março e junho de 2013', 'novembro de 1993 e janeiro de 1994', 'dezembro a março de 1981', '2004'). Never normalize it to ISO, never infer a year from the publication year, the received date or a citation. A date printed only as the publication or edition year is not an event date.",
+  "8 TABLE AXES BEFORE RECORDS. For every entry that gives records, fill table_level_labels before any record: what the rows are (taxa, with or without heading rows for order, family or subfamily), what the columns are (events, attributes of the taxon, derived metrics, totals), how the presence of a taxon at an event is shown (number, mark, list of event codes, source codes) and how absence is shown. Then fill columns[]: one entry per printed column with its header as printed and its role (rule COLUMN ROLES).",
+  "9 COLUMN ROLES, closed examples. taxon_name = the name column; family, order, vernacular, authorship = those printed columns; event_count = a column of one event that prints numbers per taxon (N, número de indivíduos, capturas, abundância of one point or plot); event_mark = a column of one event that prints presence or absence marks (X, -, +, 1/0); event_code_list = one column whose cell lists the codes of the events where the taxon occurs ('PB5; CSU', '1, 2, 3, 14'); event_source_codes = a column of one event whose cell lists source or record-type codes ('Ta Tb n t w l'); event_quantity_other = a column of one event that prints a quantity that is not a count (frequência %, density, cover) and is the only quantity printed for that taxon at that event; attribute = a per-taxon trait or remark printed in a column (hábito, guilda, horário de atividade, habitat type, status migratório, estratégia reprodutiva, forma de registro, usos); threat_status = a conservation status column; voucher = collector number or collection acronym; derived_metric = values the authors computed from counts (DR, DA, FR, FA, DoA, DoR, IVI, IVC, área basal, % relative abundance, constância, índices); total = sums across events or across taxa; event_taxon_list = a column of a table whose rows and columns are both parts of the sampling (day x hour, trap x night) and whose cells list the taxa seen, with a count in parentheses ('Saguinus labiatus (5)'). event_* columns carry event_id; derived_metric and total cells are counted as data cells and skipped.",
+  "10 ONE RECORD PER PRINTED TAXON-BY-EVENT CELL OR LIST LINE. An event_count, event_mark, event_source_codes or event_quantity_other cell that holds something gives one record. An event_code_list cell gives one record per code it lists, and each code counts as one data cell. An event_taxon_list cell gives one record per taxon it lists, in printed order (position_in_cell), each counting as one data cell; event_id is the row's event and event_detail_as_printed holds the column header ('6h-7h'). A species list with no event columns gives one record per taxon line, tied to the event the list describes (the study event when the caption or methods tie it to nothing narrower). A taxon printed in two tables gives a record in each, with the same event only when the tables are about the same event; say so in notes.",
+  "11 BLANK IS NOT ABSENT. A blank cell is not a data cell and gives no record. occurrenceStatus = 'absent' only when the table prints a mark that its legend or the methods define as absence ('( - ) ausente'), or prints 0 in a count column; then the cell is a data cell and gives a record. A '-' without such a legend is not a data cell. occurrenceStatus = 'present' for every count above 0, every presence mark, every code listed and every list line.",
+  "12 NAMES EXACTLY AS PRINTED. verbatimScientificName holds the name as printed in that cell or line, with authorship and year when printed with it, with its punctuation, spacing, typos and old spellings ('Bufo paracnemis (lutz, 1934)', 'Ceratophrys cranvelly', 'Hoplias gr. malabaricus (Bloch 1794)'). Never correct, complete, update or split a name, never add authorship, never resolve it against a taxonomic backbone or a list; that is a later step outside the transcription. A name broken over lines is joined with single spaces.",
+  "13 QUALIFIERS AS PRINTED. identificationQualifier copies the qualifier printed in the name ('cf.', 'aff.', 'sp.', 'spp.', 'sp. aff.', 'gr.', 'sp. 1', 'sp. n.'), exactly as printed, and verbatimScientificName still keeps it. Morphospecies and undetermined rows ('Indeterminada 1', 'Euglossa sp.', 'Morfoespécie 3') are records like any other.",
+  "14 HIGHER TAXA ONLY AS PRINTED. family and order are filled only when printed: in their own column, or in a heading row above the taxon ('Família Anostomidae', 'ORDEM CHARACIFORMES', 'Tinamidae', 'Arsenurinae', 'Répteis'). Write them as printed, with family_source and order_source saying 'column' or 'heading_row'. A heading row is not a data cell. Never infer a family or order from the genus. higher_group_as_printed holds any other printed heading the taxon sits under (subfamily, class, 'Anfíbios', 'Mamíferos').",
+  "15 VERNACULAR NAME as printed in the line or column ('Jararaquinha', 'aracuã-do-pantanal', 'Aroeira'), never from another source.",
+  "16 QUANTITY AS PRINTED. individualCount takes the printed integer when the column or methods say it counts individuals or specimens (N = número de indivíduos, exemplares, indivíduos capturados). Every other quantity goes to organismQuantity with organismQuantityType copied from the header or legend as printed ('número de capturas', 'Frequência %', 'NP por classe de tamanho III'); never translate it to a Darwin Core vocabulary. value_as_printed keeps the printed text. The only allowed changes in the numeric fields are decimal comma to point and dropping a thousands point. Never compute, sum, convert or derive a quantity. A value the authors print next to the count in parentheses ('43 (22,4)', a percentage or a standard error) is not a separate cell or record: value_as_printed keeps the whole cell, the count goes to its field, and the column notes say what the parenthesis is.",
+  "17 CODES AND SYMBOLS. Every code, letter, symbol or mark in a cell ('X', '*', 'VA2', 'Ta', 'n', 'Re', 'Cp,Ba', 'v (f)') goes to printed_code exactly as printed in that cell, and code_meaning copies its meaning from the legend, caption, footnote or methods (at most 15 words), with code_legend_page. The table lists every symbol once in table_level_labels.symbols with its meaning and where it is defined. A code with no printed meaning keeps code_meaning = null and is listed in end_checklist.codes as undefined. A code that names an event (rule 10) also sets event_id.",
+  "18 WHO RECORDED IT. record_origin says what the document prints about the source of that record: this_study (the authors' own field work, 'este estudo', 'dados de campo de'), cited_source (a reference or another author, 'Fonte: Ta (TUBELIS; TOMAS 1999)'), collection (a specimen in a named collection), mixed (the cell joins several), not_stated. cited_source_as_printed holds the printed code or reference. recording_method_as_printed holds the printed method of that record ('v (identificação visual)', 'captura em rede', 'armadilha luminosa'), else null; samplingProtocol of the event holds the method for the whole event. Never write basisOfRecord from guesswork: it is set in a later step from these fields.",
+  "19 STATUS AS PRINTED. A conservation status printed for the taxon (column, symbol or footnote: 'VU', 'Vulnerável (MMA, 2014)', 'EN', 'nc') goes to threat_status_as_printed with the list or authority as printed in threat_status_source_as_printed. Migratory or residence status ('Re', 'Intra') is an attribute, not a threat status.",
+  "20 ATTRIBUTES PER LINE. Per-taxon columns that are neither name nor occurrence (hábito, guilda, horário de atividade, habitat of the taxon, estratégia reprodutiva, usos, tamanho máximo) go to line_attributes on every record of that line, one item per column with column_id and the value as printed. Their cells are data cells only when the table has no event columns and they are the only content of the line; otherwise they are attributes and are not counted.",
+  "21 DERIVED VALUES ARE NOT OCCURRENCES. Relative abundance, density, frequency and dominance computed by the authors (DR, DA, FA, FR, DoA, DoR, IVI, IVC, área basal, % of total, constância de ocorrência), totals across events, totals per family, richness, diversity and similarity indices, rarefaction and estimator values are counted as data cells and skipped, never recorded, with the reason in skipped_reason. A per-event frequency or percentage is recorded only when it is the only quantity the document prints for that taxon at that event (rule COLUMN ROLES, event_quantity_other).",
+  "22 TOTAL ROWS AND SUMMARY TABLES. A 'Total' row or column is counted and skipped. A table that prints only counts per family, order or habitat, or richness per site, is kind = summary: inventoried, cells counted, all skipped.",
+  "23 TEXT RECORDS. A taxon tied to an event of this study only in the body text ('Eulaema mocsary foi capturada apenas na capoeira') is a mandatory record when no table or annex prints it for that event: table_or_figure = 'text', one tables[] entry with label 'text' per page, the quote in notes. A taxon named in the text without an event of this study, in a discussion or a comparison with other surveys, is not a record. A text mention that repeats a table cell is not recorded again.",
+  "24 FIGURES. A figure gives records only when it prints taxon names with a value or mark per event (kind = figure_labeled). Photos, maps, rarefaction curves, dendrograms and bar charts without printed values are inventoried as figure_unlabeled with data_cells = 0.",
+  "25 TABLES THAT GIVE NO RECORDS. Site tables (coordinates, habitat, effort), soil, weather, method and key tables are inventoried with kind = event_context, context, or legend and data_cells = 0; their content goes to events[] or table_level_labels. Tables from other studies printed for comparison (lists of other surveys, similarity with other areas) are kind = comparison, cells counted and skipped.",
+  "26 CONTRADICTIONS. When the document contradicts itself (text against table, a name spelled two ways, a coordinate that does not fall in the named municipality, a total that does not match its rows, a date in the abstract against the methods, a species in the text missing from the list), record what the table prints and fill source_inconsistency with both versions and pages. Put it on the record when it is about that cell, on the event when it is about the site, on table_level_labels when it is about the table.",
+  "27 ILLEGIBLE CELLS STAY IN. A cell or line that holds something but cannot be read with confidence is a record with value_kind = 'illegible', the best reading in value_as_printed or verbatimScientificName, and the doubt in notes. It counts as transcribed.",
+  "28 page is the PDF page number counted from 1 (first page of the file = 1), not the number printed on the page. table_or_figure is the label as printed ('Tabela 2', 'Anexo I', 'Continuação do Anexo I', 'text').",
+  "29 notes, source_inconsistency, code_meaning and every other free-text field quote at most 15 words of the document.",
+  "30 TWO INDEPENDENT TRANSCRIPTIONS. Each document is transcribed twice, by A and B, each without seeing the other. A script diffs A and B record by record (key: table_id, row_index, position_in_cell, event_id, printed_code) and field by field, and an adjudicator decides every difference against the rendered page. Write transcriber = 'A' or 'B'.",
+  "31 END-OF-TRANSCRIPTION CHECKLIST. Before closing, fill end_checklist. events: one entry per event and per field in its enum, filled, inherited (from the parent, page of the parent) or not_printed. tables: one entry per entry that gives records, with the symbols found in the cells against the symbols listed with meaning, the heading rows carried to family or order, the event columns with event_id, and the derived or total cells skipped. rows: per table, the taxon lines printed against the distinct row_index values in records, and rows_match. codes: every printed code with its meaning or 'undefined'. totals: the sums over tables[] and the record count, with every_table_closes true only when each entry closes."
+ ],
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "doc_id",
+  "transcriber",
+  "schema_version",
+  "events",
+  "tables",
+  "records",
+  "end_checklist"
+ ],
+ "properties": {
+  "doc_id": {
+   "description": "id of the document in sources.json.",
+   "type": "string"
+  },
+  "transcriber": {
+   "description": "Rule TWO INDEPENDENT TRANSCRIPTIONS.",
+   "type": "string",
+   "enum": [
+    "A",
+    "B",
+    "adjudicated"
+   ]
+  },
+  "schema_version": {
+   "description": "Version of this schema used.",
+   "type": "string"
+  },
+  "events": {
+   "description": "One entry per site or sampling event, the study-wide event first.",
+   "type": "array",
+   "minItems": 1,
+   "items": {
+    "$ref": "#/$defs/event"
+   }
+  },
+  "tables": {
+   "description": "Inventory of every table, annex, figure and text block that names taxa, in page order.",
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/table"
+   }
+  },
+  "records": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/record"
+   }
+  },
+  "end_checklist": {
+   "$ref": "#/$defs/end_checklist"
+  }
+ },
+ "$defs": {
+  "event": {
+   "description": "One site or sampling event as the document distinguishes it (rules EVENTS FIRST, EVENT FIELDS ONCE, WITH PAGE).",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "event_id",
+    "parent_event_id",
+    "event_level",
+    "event_label_as_printed",
+    "verbatimLocality",
+    "municipality",
+    "stateProvince",
+    "country",
+    "verbatimCoordinates",
+    "verbatimCoordinateSystem",
+    "decimalLatitude",
+    "decimalLongitude",
+    "geodeticDatum",
+    "verbatimElevation",
+    "verbatimEventDate",
+    "habitat",
+    "samplingProtocol",
+    "samplingEffort",
+    "sampleSize_as_printed",
+    "recordedBy_as_printed",
+    "field_pages",
+    "source_inconsistency",
+    "notes"
+   ],
+   "properties": {
+    "event_id": {
+     "description": "Short id unique inside the document: 'e1' for the study-wide event, then 'e2', 'e3' ... in the order the document presents the sites.",
+     "type": "string",
+     "pattern": "^e[0-9]+$"
+    },
+    "parent_event_id": {
+     "description": "event_id of the event this one sits in (a point in its station, a plot in its site, a campaign in its site, every site in the study event). null only for the study-wide event.",
+     "type": [
+      "string",
+      "null"
+     ],
+     "pattern": "^e[0-9]+$"
+    },
+    "event_level": {
+     "description": "study = the whole survey; site = a named area, farm, fragment, reserve or locality; point = a sampling point, station or trap position inside a site; plot = a parcel or plot; transect; campaign = a sampling period or expedition; site_campaign = one site in one campaign; habitat = a habitat class used as a column; stratum = a vertical stratum, bait or trap type used as a column.",
+     "type": "string",
+     "enum": [
+      "study",
+      "site",
+      "point",
+      "plot",
+      "transect",
+      "campaign",
+      "site_campaign",
+      "habitat",
+      "stratum"
+     ]
+    },
+    "event_label_as_printed": {
+     "description": "The label or code the document uses for this event, exactly as printed ('A', 'Ponto 1', 'VA1', 'FG', 'Invernada Rotacional', 'Nhumirim', 'Área I', 'EUG H1'). null for the study event when it has no label.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "verbatimLocality": {
+     "description": "The locality as printed, with its hierarchy as printed ('invernada Rotacional, fazenda Eldorado, Paiaguás, MS'). Never from the affiliation or the publisher.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "municipality": {
+     "description": "Municipality as printed ('Corumbá', 'Fênix', 'Ouricuri'), only when the document names it as the place of this event.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "stateProvince": {
+     "description": "State as printed ('MS', 'Mato Grosso do Sul', 'PE').",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "country": {
+     "description": "Country as printed; null when the document does not print it for the site.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "verbatimCoordinates": {
+     "description": "Coordinates exactly as printed, signs and hemisphere letters included (rule COORDINATES AS PRINTED).",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "verbatimCoordinateSystem": {
+     "description": "As printed or as the printed format shows it ('graus, minutos e segundos', 'UTM 22S'); null when no coordinates are printed.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "decimalLatitude": {
+     "description": "Only when printed in decimal degrees; a copy of the printed number with point as decimal separator. Never converted.",
+     "type": [
+      "number",
+      "null"
+     ],
+     "minimum": -90,
+     "maximum": 90
+    },
+    "decimalLongitude": {
+     "description": "Only when printed in decimal degrees; a copy of the printed number. Never converted.",
+     "type": [
+      "number",
+      "null"
+     ],
+     "minimum": -180,
+     "maximum": 180
+    },
+    "geodeticDatum": {
+     "description": "Datum as printed ('SAD69', 'WGS 84'); null when not printed.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "verbatimElevation": {
+     "description": "Elevation as printed ('100–800 m', '175 m acima do nível do mar').",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "verbatimEventDate": {
+     "description": "Date or period as printed (rule DATES AS PRINTED).",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "habitat": {
+     "description": "Habitat or vegetation of this event as printed ('Vazante', 'Lagoa permanente', 'campo cerrado', 'mata alta sem babaçu', 'pastagem').",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "samplingProtocol": {
+     "description": "Sampling method as printed, in the document's words, at most 15 words quoted ('redes de arrasto e tarrafas', 'método de quadrantes centrados', 'armadilhas luminosas com lâmpadas mistas de 250 watts').",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "samplingEffort": {
+     "description": "Effort as printed for this event ('5 arrastos', '10 lances', '20 armadilhas por 48 horas', '12 noites').",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "sampleSize_as_printed": {
+     "description": "Area or size of the sample as printed ('1 ha', '10 unidades amostrais de 8 m x 40 m', '25 pontos').",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "recordedBy_as_printed": {
+     "description": "Collectors or observers of this event as printed, when the document names them for the field work; never the author list by default.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "field_pages": {
+     "description": "Page of each filled field: {field name: page}. Every non-null field among verbatimLocality, municipality, stateProvince, country, verbatimCoordinates, decimalLatitude, decimalLongitude, geodeticDatum, verbatimElevation, verbatimEventDate, habitat, samplingProtocol, samplingEffort, sampleSize and verbatimCoordinateSystem has its page here; inherited fields are not repeated.",
+     "type": "object",
+     "additionalProperties": {
+      "type": "integer",
+      "minimum": 1
+     }
+    },
+    "source_inconsistency": {
+     "description": "Both versions and pages when the document contradicts itself about this event (rule CONTRADICTIONS).",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "notes": {
+     "description": "Anything else about the event, at most 15 words quoted.",
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "table": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "table_id",
+    "page",
+    "label",
+    "kind",
+    "caption_summary",
+    "event_ids",
+    "data_cells",
+    "transcribed",
+    "skipped_cells",
+    "skipped_reason",
+    "table_level_labels",
+    "columns"
+   ],
+   "properties": {
+    "table_id": {
+     "description": "Short id unique inside the document: 'k1', 'k2' ... in page order; one per page for a continued table.",
+     "type": "string",
+     "pattern": "^k[0-9]+$"
+    },
+    "page": {
+     "description": "PDF page (from 1) of this entry.",
+     "type": "integer",
+     "minimum": 1
+    },
+    "label": {
+     "description": "Label as printed ('Tabela 2', 'TABELA 1', 'Anexo I', 'Continuação do Anexo I', 'Figura 3'), or 'text' for taxa named in the body text of that page.",
+     "type": "string"
+    },
+    "kind": {
+     "description": "occurrence_matrix = taxa x events with counts, marks or codes; species_list = taxa of one event, one per line, with or without attributes; plot_table = phytosociological or plot table of one event with counts and derived metrics; event_context = sites, coordinates, dates, effort; summary = counts or richness per family, site or habitat, all skipped; comparison = other studies, all skipped; legend = keys and abbreviations only; figure_labeled; figure_unlabeled; text; context = soil, weather, methods.",
+     "type": "string",
+     "enum": [
+      "occurrence_matrix",
+      "species_list",
+      "plot_table",
+      "event_context",
+      "summary",
+      "comparison",
+      "legend",
+      "figure_labeled",
+      "figure_unlabeled",
+      "text",
+      "context"
+     ]
+    },
+    "caption_summary": {
+     "description": "The caption in our own words or quoted, at most 15 words quoted.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "event_ids": {
+     "description": "Events whose records are in this entry. A record's event_id is always one of these.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "pattern": "^e[0-9]+$"
+     }
+    },
+    "data_cells": {
+     "description": "Cells that hold an occurrence, a quantity, a mark, a code, a derived value or a total, counted before transcription. Each event code inside an event_code_list cell counts as 1. A list line counts as 1. Excludes headers, heading rows, name, family, vernacular and authorship cells, attribute cells of a table with event columns, and blank cells. A '-' counts only when the legend defines it as absence. 0 for event_context, legend, context and figure_unlabeled.",
+     "type": "integer",
+     "minimum": 0
+    },
+    "transcribed": {
+     "description": "Records written from this entry. Must equal the number of records with this table_id.",
+     "type": "integer",
+     "minimum": 0
+    },
+    "skipped_cells": {
+     "description": "data_cells - transcribed.",
+     "type": "integer",
+     "minimum": 0
+    },
+    "skipped_reason": {
+     "description": "Which cells were skipped and why (derived metric, total, comparison, outside extract_pages), when skipped_cells > 0.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "table_level_labels": {
+     "oneOf": [
+      {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "row_identity",
+        "column_axis",
+        "presence_shown_as",
+        "absence_shown_as",
+        "symbols",
+        "quantity_meaning",
+        "heading_levels",
+        "threat_list_as_printed",
+        "footnotes",
+        "source_inconsistency"
+       ],
+       "properties": {
+        "row_identity": {
+         "description": "What the rows are, in a few words ('espécies de peixes com cabeçalhos de ordem e família', 'famílias botânicas').",
+         "type": "string"
+        },
+        "column_axis": {
+         "description": "What the columns are.",
+         "type": "string",
+         "enum": [
+          "events",
+          "attributes_only",
+          "events_and_attributes",
+          "single_event_list",
+          "events_by_events",
+          "mixed"
+         ]
+        },
+        "presence_shown_as": {
+         "description": "How the table shows that a taxon occurred at an event.",
+         "type": "string",
+         "enum": [
+          "count",
+          "mark",
+          "event_code_list",
+          "source_codes",
+          "quantity_other",
+          "list_line",
+          "taxa_in_cells",
+          "mixed"
+         ]
+        },
+        "absence_shown_as": {
+         "description": "The printed absence mark and where its meaning is defined ('( - ) ausente, caption p4'), '0 in count columns', or null when the table shows no absence (blank cells).",
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "symbols": {
+         "description": "Every code, letter or mark used in the cells, once, with its meaning (rule CODES AND SYMBOLS).",
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+           "symbol",
+           "meaning_as_printed",
+           "page",
+           "place"
+          ],
+          "properties": {
+           "symbol": {
+            "description": "The code, letter, mark or abbreviation as printed ('X', '-', '*', 'VA1', 'Ta', 'Cp', 'Re', 'v').",
+            "type": "string"
+           },
+           "meaning_as_printed": {
+            "description": "Its meaning as printed, at most 15 words; null when the document defines it nowhere.",
+            "type": [
+             "string",
+             "null"
+            ]
+           },
+           "page": {
+            "description": "PDF page (from 1) where this is printed; null when the value is null.",
+            "type": [
+             "integer",
+             "null"
+            ],
+            "minimum": 1
+           },
+           "place": {
+            "description": "Where it is defined.",
+            "type": [
+             "string",
+             "null"
+            ],
+            "enum": [
+             "caption",
+             "header",
+             "footnote",
+             "legend",
+             "methods",
+             "text",
+             "other_table",
+             null
+            ]
+           }
+          }
+         }
+        },
+        "quantity_meaning": {
+         "description": "What the numbers in the cells are, as printed, with page and place ('N= número de indivíduos, caption p12').",
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "heading_levels": {
+         "description": "Printed heading rows that group the taxa, top-down ('ORDEM', 'Família', 'subfamília', 'Anfíbios').",
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        },
+        "threat_list_as_printed": {
+         "description": "The threatened-species list the table refers to, as printed ('MMA, 2014'), else null.",
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "footnotes": {
+         "description": "Every footnote or note under the table, as printed (at most 15 words each), with what it was used for.",
+         "type": "array",
+         "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+           "marker",
+           "text",
+           "used_for"
+          ],
+          "properties": {
+           "marker": {
+            "description": "Footnote marker as printed ('1', '*', 'a/'), or null.",
+            "type": [
+             "string",
+             "null"
+            ]
+           },
+           "text": {
+            "description": "At most 15 words quoted.",
+            "type": "string"
+           },
+           "used_for": {
+            "description": "Field or column that took it, or 'nothing'.",
+            "type": "string"
+           }
+          }
+         }
+        },
+        "source_inconsistency": {
+         "description": "Contradictions about the table as a whole (rule CONTRADICTIONS).",
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       }
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "Filled for every entry that gives records; null otherwise."
+    },
+    "columns": {
+     "description": "One entry per printed column of an entry that gives records (rule COLUMN ROLES). Empty otherwise.",
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "column_id",
+       "header_as_printed",
+       "role",
+       "event_id",
+       "organismQuantityType_as_printed",
+       "notes"
+      ],
+      "properties": {
+       "column_id": {
+        "description": "Short id unique inside the table: 'c1', 'c2' ... from left to right.",
+        "type": "string",
+        "pattern": "^c[0-9]+$"
+       },
+       "header_as_printed": {
+        "description": "The column header exactly as printed, with spanning headers joined by ' / ' ('Estação / A / 1', 'Fazendas/Fontes / Ipanema').",
+        "type": "string"
+       },
+       "role": {
+        "description": "Rule COLUMN ROLES.",
+        "type": "string",
+        "enum": [
+         "taxon_name",
+         "family",
+         "order",
+         "vernacular",
+         "authorship",
+         "event_count",
+         "event_mark",
+         "event_code_list",
+         "event_source_codes",
+         "event_quantity_other",
+         "event_taxon_list",
+         "attribute",
+         "threat_status",
+         "voucher",
+         "derived_metric",
+         "total",
+         "other"
+        ]
+       },
+       "event_id": {
+        "description": "For event_count, event_mark, event_source_codes and event_quantity_other: the event of this column. null otherwise, and null for event_taxon_list, whose event is the row's.",
+        "type": [
+         "string",
+         "null"
+        ],
+        "pattern": "^e[0-9]+$"
+       },
+       "organismQuantityType_as_printed": {
+        "description": "For event_count and event_quantity_other: what the numbers are, copied from the header, caption, legend or methods ('N = número de indivíduos', 'número de capturas', 'Frequência %'). null otherwise.",
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "notes": {
+        "description": "Where the meaning came from when not in the header (page), at most 15 words quoted.",
+        "type": [
+         "string",
+         "null"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "column": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "column_id",
+    "header_as_printed",
+    "role",
+    "event_id",
+    "organismQuantityType_as_printed",
+    "notes"
+   ],
+   "properties": {
+    "column_id": {
+     "description": "Short id unique inside the table: 'c1', 'c2' ... from left to right.",
+     "type": "string",
+     "pattern": "^c[0-9]+$"
+    },
+    "header_as_printed": {
+     "description": "The column header exactly as printed, with spanning headers joined by ' / ' ('Estação / A / 1', 'Fazendas/Fontes / Ipanema').",
+     "type": "string"
+    },
+    "role": {
+     "description": "Rule COLUMN ROLES.",
+     "type": "string",
+     "enum": [
+      "taxon_name",
+      "family",
+      "order",
+      "vernacular",
+      "authorship",
+      "event_count",
+      "event_mark",
+      "event_code_list",
+      "event_source_codes",
+      "event_quantity_other",
+      "event_taxon_list",
+      "attribute",
+      "threat_status",
+      "voucher",
+      "derived_metric",
+      "total",
+      "other"
+     ]
+    },
+    "event_id": {
+     "description": "For event_count, event_mark, event_source_codes and event_quantity_other: the event of this column. null otherwise, and null for event_taxon_list, whose event is the row's.",
+     "type": [
+      "string",
+      "null"
+     ],
+     "pattern": "^e[0-9]+$"
+    },
+    "organismQuantityType_as_printed": {
+     "description": "For event_count and event_quantity_other: what the numbers are, copied from the header, caption, legend or methods ('N = número de indivíduos', 'número de capturas', 'Frequência %'). null otherwise.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "notes": {
+     "description": "Where the meaning came from when not in the header (page), at most 15 words quoted.",
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "symbol": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "symbol",
+    "meaning_as_printed",
+    "page",
+    "place"
+   ],
+   "properties": {
+    "symbol": {
+     "description": "The code, letter, mark or abbreviation as printed ('X', '-', '*', 'VA1', 'Ta', 'Cp', 'Re', 'v').",
+     "type": "string"
+    },
+    "meaning_as_printed": {
+     "description": "Its meaning as printed, at most 15 words; null when the document defines it nowhere.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "page": {
+     "description": "PDF page (from 1) where this is printed; null when the value is null.",
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 1
+    },
+    "place": {
+     "description": "Where it is defined.",
+     "type": [
+      "string",
+      "null"
+     ],
+     "enum": [
+      "caption",
+      "header",
+      "footnote",
+      "legend",
+      "methods",
+      "text",
+      "other_table",
+      null
+     ]
+    }
+   }
+  },
+  "table_level_labels": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "row_identity",
+    "column_axis",
+    "presence_shown_as",
+    "absence_shown_as",
+    "symbols",
+    "quantity_meaning",
+    "heading_levels",
+    "threat_list_as_printed",
+    "footnotes",
+    "source_inconsistency"
+   ],
+   "properties": {
+    "row_identity": {
+     "description": "What the rows are, in a few words ('espécies de peixes com cabeçalhos de ordem e família', 'famílias botânicas').",
+     "type": "string"
+    },
+    "column_axis": {
+     "description": "What the columns are.",
+     "type": "string",
+     "enum": [
+      "events",
+      "attributes_only",
+      "events_and_attributes",
+      "single_event_list",
+      "events_by_events",
+      "mixed"
+     ]
+    },
+    "presence_shown_as": {
+     "description": "How the table shows that a taxon occurred at an event.",
+     "type": "string",
+     "enum": [
+      "count",
+      "mark",
+      "event_code_list",
+      "source_codes",
+      "quantity_other",
+      "list_line",
+      "taxa_in_cells",
+      "mixed"
+     ]
+    },
+    "absence_shown_as": {
+     "description": "The printed absence mark and where its meaning is defined ('( - ) ausente, caption p4'), '0 in count columns', or null when the table shows no absence (blank cells).",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "symbols": {
+     "description": "Every code, letter or mark used in the cells, once, with its meaning (rule CODES AND SYMBOLS).",
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "symbol",
+       "meaning_as_printed",
+       "page",
+       "place"
+      ],
+      "properties": {
+       "symbol": {
+        "description": "The code, letter, mark or abbreviation as printed ('X', '-', '*', 'VA1', 'Ta', 'Cp', 'Re', 'v').",
+        "type": "string"
+       },
+       "meaning_as_printed": {
+        "description": "Its meaning as printed, at most 15 words; null when the document defines it nowhere.",
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "page": {
+        "description": "PDF page (from 1) where this is printed; null when the value is null.",
+        "type": [
+         "integer",
+         "null"
+        ],
+        "minimum": 1
+       },
+       "place": {
+        "description": "Where it is defined.",
+        "type": [
+         "string",
+         "null"
+        ],
+        "enum": [
+         "caption",
+         "header",
+         "footnote",
+         "legend",
+         "methods",
+         "text",
+         "other_table",
+         null
+        ]
+       }
+      }
+     }
+    },
+    "quantity_meaning": {
+     "description": "What the numbers in the cells are, as printed, with page and place ('N= número de indivíduos, caption p12').",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "heading_levels": {
+     "description": "Printed heading rows that group the taxa, top-down ('ORDEM', 'Família', 'subfamília', 'Anfíbios').",
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "threat_list_as_printed": {
+     "description": "The threatened-species list the table refers to, as printed ('MMA, 2014'), else null.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "footnotes": {
+     "description": "Every footnote or note under the table, as printed (at most 15 words each), with what it was used for.",
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "marker",
+       "text",
+       "used_for"
+      ],
+      "properties": {
+       "marker": {
+        "description": "Footnote marker as printed ('1', '*', 'a/'), or null.",
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "text": {
+        "description": "At most 15 words quoted.",
+        "type": "string"
+       },
+       "used_for": {
+        "description": "Field or column that took it, or 'nothing'.",
+        "type": "string"
+       }
+      }
+     }
+    },
+    "source_inconsistency": {
+     "description": "Contradictions about the table as a whole (rule CONTRADICTIONS).",
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "record": {
+   "description": "One printed taxon-by-event cell, one event code inside a code-list cell, or one line of a species list.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "record_id",
+    "event_id",
+    "table_id",
+    "column_id",
+    "row_index",
+    "position_in_cell",
+    "event_detail_as_printed",
+    "page",
+    "table_or_figure",
+    "value_kind",
+    "verbatimScientificName",
+    "identificationQualifier",
+    "family_as_printed",
+    "family_source",
+    "order_as_printed",
+    "order_source",
+    "higher_group_as_printed",
+    "vernacularName",
+    "occurrenceStatus",
+    "individualCount",
+    "organismQuantity",
+    "organismQuantityType",
+    "value_as_printed",
+    "printed_code",
+    "code_meaning",
+    "code_legend_page",
+    "record_origin",
+    "cited_source_as_printed",
+    "recording_method_as_printed",
+    "voucher_as_printed",
+    "threat_status_as_printed",
+    "threat_status_source_as_printed",
+    "line_attributes",
+    "source_inconsistency",
+    "notes"
+   ],
+   "properties": {
+    "record_id": {
+     "description": "'r1', 'r2' ... in reading order: table by table, row by row, left to right.",
+     "type": "string",
+     "pattern": "^r[0-9]+$"
+    },
+    "event_id": {
+     "description": "The most specific event of this cell or line (rules EVENTS FIRST, ONE RECORD PER PRINTED TAXON-BY-EVENT CELL OR LIST LINE).",
+     "type": "string",
+     "pattern": "^e[0-9]+$"
+    },
+    "table_id": {
+     "description": "tables[] entry of this record.",
+     "type": "string",
+     "pattern": "^k[0-9]+$"
+    },
+    "column_id": {
+     "description": "Column of the cell; null for a list line of a table whose only occurrence is the line itself.",
+     "type": [
+      "string",
+      "null"
+     ],
+     "pattern": "^c[0-9]+$"
+    },
+    "row_index": {
+     "description": "Taxon line number inside this table entry, counted from 1 over taxon lines only, or over event lines when the rows are events (heading rows and total rows are not counted). The key that ties A and B together.",
+     "type": "integer",
+     "minimum": 1
+    },
+    "position_in_cell": {
+     "description": "Order of the taxon inside an event_taxon_list cell, from 1; 1 for every other record.",
+     "type": "integer",
+     "minimum": 1
+    },
+    "event_detail_as_printed": {
+     "description": "For event_taxon_list records: the column header that narrows the event ('6h-7h', 'Tarde'); else null.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "page": {
+     "description": "PDF page (from 1) of the cell.",
+     "type": "integer",
+     "minimum": 1
+    },
+    "table_or_figure": {
+     "description": "Label as printed, or 'text'.",
+     "type": "string"
+    },
+    "value_kind": {
+     "description": "count = a number of individuals or captures; quantity = another number; mark = a presence or absence mark; code = an event, source or record code; list_line = a line of a species list with no cell value; illegible.",
+     "type": "string",
+     "enum": [
+      "count",
+      "quantity",
+      "mark",
+      "code",
+      "list_line",
+      "illegible"
+     ]
+    },
+    "verbatimScientificName": {
+     "description": "Rule NAMES EXACTLY AS PRINTED.",
+     "type": "string"
+    },
+    "identificationQualifier": {
+     "description": "Rule QUALIFIERS AS PRINTED; null when none is printed.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "family_as_printed": {
+     "description": "Rule HIGHER TAXA ONLY AS PRINTED.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "family_source": {
+     "description": "Where the family came from.",
+     "type": [
+      "string",
+      "null"
+     ],
+     "enum": [
+      "column",
+      "heading_row",
+      null
+     ]
+    },
+    "order_as_printed": {
+     "description": "Rule HIGHER TAXA ONLY AS PRINTED.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "order_source": {
+     "description": "Where the order came from.",
+     "type": [
+      "string",
+      "null"
+     ],
+     "enum": [
+      "column",
+      "heading_row",
+      null
+     ]
+    },
+    "higher_group_as_printed": {
+     "description": "Any other printed heading above the taxon (subfamily, class, 'Répteis'), joined with ' / ' top-down.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "vernacularName": {
+     "description": "Rule VERNACULAR NAME.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "occurrenceStatus": {
+     "description": "Rule BLANK IS NOT ABSENT.",
+     "type": "string",
+     "enum": [
+      "present",
+      "absent"
+     ]
+    },
+    "individualCount": {
+     "description": "Rule QUANTITY AS PRINTED: only for counts of individuals or specimens.",
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 0
+    },
+    "organismQuantity": {
+     "description": "Rule QUANTITY AS PRINTED: any other printed quantity, decimal comma turned to point.",
+     "type": [
+      "number",
+      "null"
+     ]
+    },
+    "organismQuantityType": {
+     "description": "What organismQuantity is, as printed (from the column's organismQuantityType_as_printed).",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "value_as_printed": {
+     "description": "The cell text exactly as printed, for count, quantity, mark and illegible records; null for code and list_line records.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "printed_code": {
+     "description": "Rule CODES AND SYMBOLS: the code or symbol in the cell, or the event code for an event_code_list record.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "code_meaning": {
+     "description": "Its meaning as printed, at most 15 words; null when undefined.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "code_legend_page": {
+     "description": "PDF page (from 1) where this is printed; null when the value is null.",
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 1
+    },
+    "record_origin": {
+     "description": "Rule WHO RECORDED IT.",
+     "type": "string",
+     "enum": [
+      "this_study",
+      "cited_source",
+      "collection",
+      "mixed",
+      "not_stated"
+     ]
+    },
+    "cited_source_as_printed": {
+     "description": "The printed source code or reference for this record, else null.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "recording_method_as_printed": {
+     "description": "The printed method of this record, else null.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "voucher_as_printed": {
+     "description": "Collector number, collection acronym or catalogue number as printed ('RCM 4311', 'AMNH, MZUSP').",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "threat_status_as_printed": {
+     "description": "Rule STATUS AS PRINTED.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "threat_status_source_as_printed": {
+     "description": "The list or authority as printed ('MMA, 2014').",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "line_attributes": {
+     "description": "Rule ATTRIBUTES PER LINE.",
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "column_id",
+       "value_as_printed"
+      ],
+      "properties": {
+       "column_id": {
+        "description": "Column of the attribute.",
+        "type": "string",
+        "pattern": "^c[0-9]+$"
+       },
+       "value_as_printed": {
+        "description": "The cell as printed.",
+        "type": "string"
+       }
+      }
+     }
+    },
+    "source_inconsistency": {
+     "description": "Rule CONTRADICTIONS, when about this cell or line.",
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "notes": {
+     "description": "At most 15 words quoted; the quote for text records.",
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   }
+  },
+  "end_checklist": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "events",
+    "tables",
+    "rows",
+    "codes",
+    "totals"
+   ],
+   "properties": {
+    "events": {
+     "description": "One entry per event and per field in the enum.",
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "event_id",
+       "field",
+       "status",
+       "page"
+      ],
+      "properties": {
+       "event_id": {
+        "description": "Event.",
+        "type": "string",
+        "pattern": "^e[0-9]+$"
+       },
+       "field": {
+        "description": "Field.",
+        "type": "string",
+        "enum": [
+         "verbatimLocality",
+         "municipality",
+         "stateProvince",
+         "country",
+         "verbatimCoordinates",
+         "decimalLatitude",
+         "decimalLongitude",
+         "geodeticDatum",
+         "verbatimElevation",
+         "verbatimEventDate",
+         "habitat",
+         "samplingProtocol",
+         "samplingEffort",
+         "sampleSize"
+        ]
+       },
+       "status": {
+        "description": "filled, inherited from the parent, or printed nowhere.",
+        "type": "string",
+        "enum": [
+         "filled",
+         "inherited",
+         "not_printed"
+        ]
+       },
+       "page": {
+        "description": "Page where it is printed (of the parent when inherited); null when not_printed.",
+        "type": [
+         "integer",
+         "null"
+        ],
+        "minimum": 1
+       }
+      }
+     }
+    },
+    "tables": {
+     "description": "One entry per table entry that gives records.",
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "table_id",
+       "symbols_in_cells",
+       "symbols_with_meaning",
+       "heading_rows_carried",
+       "event_columns",
+       "event_columns_with_event_id",
+       "derived_or_total_cells_skipped",
+       "attribute_columns_in_line_attributes"
+      ],
+      "properties": {
+       "table_id": {
+        "description": "Table entry.",
+        "type": "string",
+        "pattern": "^k[0-9]+$"
+       },
+       "symbols_in_cells": {
+        "description": "Distinct codes and marks found in the cells.",
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "symbols_with_meaning": {
+        "description": "Those of them with a printed meaning in table_level_labels.symbols.",
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "heading_rows_carried": {
+        "description": "true when every record under a family or order heading row carries it with family_source or order_source = 'heading_row'; null when the table has no heading rows.",
+        "type": [
+         "boolean",
+         "null"
+        ]
+       },
+       "event_columns": {
+        "description": "Columns with an event_* role.",
+        "type": "integer",
+        "minimum": 0
+       },
+       "event_columns_with_event_id": {
+        "description": "Of those, the ones with event_id filled. Must be equal.",
+        "type": "integer",
+        "minimum": 0
+       },
+       "derived_or_total_cells_skipped": {
+        "description": "Cells skipped as derived metric, total or comparison.",
+        "type": "integer",
+        "minimum": 0
+       },
+       "attribute_columns_in_line_attributes": {
+        "description": "true when every attribute column appears in line_attributes of its records; null when the table has none.",
+        "type": [
+         "boolean",
+         "null"
+        ]
+       }
+      }
+     }
+    },
+    "rows": {
+     "description": "One entry per table entry that gives records.",
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "table_id",
+       "taxon_lines_printed",
+       "distinct_row_index_in_records",
+       "lines_without_records",
+       "rows_match"
+      ],
+      "properties": {
+       "table_id": {
+        "description": "Table entry.",
+        "type": "string",
+        "pattern": "^k[0-9]+$"
+       },
+       "taxon_lines_printed": {
+        "description": "Taxon lines printed in this entry, excluding heading and total rows.",
+        "type": "integer",
+        "minimum": 0
+       },
+       "distinct_row_index_in_records": {
+        "description": "Distinct row_index values among the records of this entry.",
+        "type": "integer",
+        "minimum": 0
+       },
+       "lines_without_records": {
+        "description": "row_index of taxon lines that gave no record (every cell blank, derived or total), with the reason.",
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "rows_match": {
+        "description": "true only when taxon_lines_printed = distinct_row_index_in_records + number of lines_without_records.",
+        "type": "boolean"
+       }
+      }
+     }
+    },
+    "codes": {
+     "description": "Every distinct printed code in the document, with its meaning or 'undefined'.",
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "symbol",
+       "table_ids",
+       "meaning_as_printed"
+      ],
+      "properties": {
+       "symbol": {
+        "description": "Code as printed.",
+        "type": "string"
+       },
+       "table_ids": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "pattern": "^k[0-9]+$"
+        }
+       },
+       "meaning_as_printed": {
+        "description": "Meaning, or 'undefined'.",
+        "type": "string"
+       }
+      }
+     }
+    },
+    "totals": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "tables",
+      "data_cells",
+      "transcribed",
+      "skipped_cells",
+      "records",
+      "events",
+      "every_table_closes"
+     ],
+     "properties": {
+      "tables": {
+       "description": "Number of tables[] entries.",
+       "type": "integer",
+       "minimum": 0
+      },
+      "data_cells": {
+       "description": "Sum of tables[].data_cells.",
+       "type": "integer",
+       "minimum": 0
+      },
+      "transcribed": {
+       "description": "Sum of tables[].transcribed. Must equal records.",
+       "type": "integer",
+       "minimum": 0
+      },
+      "skipped_cells": {
+       "description": "Sum of tables[].skipped_cells.",
+       "type": "integer",
+       "minimum": 0
+      },
+      "records": {
+       "description": "Length of records[].",
+       "type": "integer",
+       "minimum": 0
+      },
+      "events": {
+       "description": "Length of events[].",
+       "type": "integer",
+       "minimum": 0
+      },
+      "every_table_closes": {
+       "description": "true only when every tables[] entry has data_cells = transcribed + skipped_cells and transcribed equal to its records.",
+       "type": "boolean"
+      }
+     }
+    }
+   }
+  }
+ }
+}

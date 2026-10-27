@@ -2,6 +2,8 @@
 
 Versão em português: [README.pt-BR.md](README.pt-BR.md)
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23680348.svg)](https://doi.org/10.5281/zenodo.23680348)
+
 1,152 species occurrences from 105 sampling events, taken from the species tables of 8 open-access Embrapa publications printed between 1982 and 2014: fish of the Taquari River floodplain and birds of Nhumirim ranch in the Pantanal (MS), bats in forest remnants of Fênix in the Atlantic Forest (PR), saturniid moths in Cerrado fragments (RO and GO), amphibians and reptiles of Ouricuri and trees and shrubs of two fragments near Petrolina in the Caatinga (PE), mammals and game birds of a forest fragment in Acre and the trees, palms and understory of 5 ha of the Tapajós National Forest in the Amazon (AC and PA). Each row is one taxon at one event exactly as printed, in Darwin Core terms, with the page and table it came from.
 
 These lists were printed as Embrapa leaflets and journal articles, and their records are not in GBIF. Each document was checked against GBIF before it was transcribed, and none of the 8 had its records there. This dataset makes them searchable and joinable with other occurrence data.

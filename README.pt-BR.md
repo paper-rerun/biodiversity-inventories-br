@@ -2,6 +2,8 @@
 
 English version: [README.md](README.md)
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23680348.svg)](https://doi.org/10.5281/zenodo.23680348)
+
 1.152 ocorrências de espécies em 105 eventos de amostragem, tiradas das tabelas de espécies de 8 publicações de acesso aberto da Embrapa impressas entre 1982 e 2014: peixes da planície de inundação do rio Taquari e aves da fazenda Nhumirim no Pantanal (MS), morcegos em remanescentes florestais de Fênix na Mata Atlântica (PR), mariposas Saturniidae em fragmentos de Cerrado (RO e GO), anfíbios e répteis de Ouricuri e árvores e arbustos de dois fragmentos perto de Petrolina na Caatinga (PE), mamíferos e aves de caça de um fragmento florestal no Acre e as árvores, palmeiras e sub-bosque de 5 ha da Floresta Nacional do Tapajós na Amazônia (AC e PA). Cada linha é um táxon num evento exatamente como foi impresso, em termos Darwin Core, com a página e a tabela de onde saiu.
 
 Essas listas foram impressas como folhetos da Embrapa e artigos de periódico, e os registros delas não estão no GBIF. Cada documento foi conferido no GBIF antes de ser transcrito, e nenhum dos 8 tinha os seus registros lá. Este dataset torna essas listas pesquisáveis e combináveis com outros dados de ocorrência.

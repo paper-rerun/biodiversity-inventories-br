@@ -1,7 +1,7 @@
 {
-  "title": "Biodiversity inventories in Brazil: 1,152 species occurrences from 8 Embrapa publications (pilot)",
+  "title": "Biodiversity inventories in Brazil: 2,850 species occurrences from 28 publications",
   "upload_type": "dataset",
-  "description": "1,152 species occurrences from 105 sampling events, transcribed in Darwin Core terms from the species tables of 8 open-access Embrapa publications (1982-2014): fish of the Taquari River floodplain and birds of Nhumirim ranch (Pantanal, MS), bats of Fênix (Atlantic Forest, PR), saturniid moths in Cerrado fragments (RO and GO), amphibians and reptiles of Ouricuri and trees and shrubs near Petrolina (Caatinga, PE), mammals and game birds in Acre and trees, palms and understory of the Tapajós National Forest (Amazon, AC and PA). Two files joined on eventID: events (study, site, point, plot, habitat unit, stratum or field day, with locality, printed date and coordinates, habitat, protocol and effort) and occurrences (scientific name as printed, qualifier, family, order, presence or absence, count or quantity, basis of record, page and table of origin). Names, dates and coordinates are kept exactly as printed; there are no ISO dates or decimal coordinates yet. Each document was checked against GBIF before transcription and none had its records there. Each document was transcribed twice, independently, by AI agents, and every disagreement was settled against the PDF; the 529 distinct names were matched against the GBIF backbone as a check. A human reviewed the result before publication. Pilot of 8 documents; part of the Paper Rerun project (Open Tables).",
+  "description": "2,850 species occurrences from 322 sampling events, transcribed in Darwin Core terms from the species tables of 28 open-access Brazilian publications (1982-2020): 23 from Embrapa's open repositories and 5 master's dissertations (UFU, UFV, UFMG). Fish, birds, mammals, bats, frogs and reptiles, dung beetles, butterflies, moths, bees, trees and mangrove plants, from the Amazon, Cerrado, Caatinga, Pantanal, Atlantic Forest, Pampa and the coast, in 13 states. Two files joined on eventID: events (study, site, campaign, point, plot, habitat unit or stratum, with locality, printed and ISO date, printed coordinates, habitat, protocol, effort and fate of the material) and occurrences (scientific name as printed, qualifier, family, order, presence or absence, count or quantity, basis of record, page and table of origin). Names and coordinates are kept exactly as printed; an ISO eventDate is derived from the printed date where it is unambiguous (1,087 occurrences); there are no decimal coordinates yet. Each document was checked against GBIF before transcription and none had its records there. Each document was transcribed twice, independently, by AI agents, and every disagreement (3,199) was settled against the PDF; the distinct names were matched against the GBIF backbone as a check. A human reviewed the result before publication. Version 2.0.0 adds a round of 20 documents to the 8-document pilot (v1.0.0). Part of the Paper Rerun project (Open Tables).",
   "creators": [
     {
       "name": "Tessaro, Filipe"
@@ -20,6 +20,10 @@
     "Brazil",
     "Embrapa",
     "open data",
-    "AI agents"
-  ]
+    "AI agents",
+    "Pampa",
+    "coast",
+    "dissertations"
+  ],
+  "version": "2.0.0"
 }

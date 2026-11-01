@@ -14,7 +14,8 @@
 #   printed, so a lost accent or a dropped '.' is a real difference. Other text is compared loosely (norm)
 # - end_checklist is not compared, it is recomputed from the final records
 #
-# Usage: python compare.py [doc_id ...]   (paths are relative to this file); python compare.py --check runs the asserts
+# Usage: python compare.py [doc_id ...] [--out DIR]   (paths are relative to this file); python compare.py --check runs the asserts
+# Schema 2.0: a field where one side is the other cut short gets kind a_is_prefix or b_is_prefix (RODADA item 2)
 import csv
 import difflib
 import glob
@@ -33,7 +34,7 @@ B_DIR = os.path.join(ROOT, "B")
 EVENT_FIELDS = ["parent_event_id", "event_level", "event_label_as_printed", "verbatimLocality", "municipality", "stateProvince",
 	"country", "verbatimCoordinates", "verbatimCoordinateSystem", "decimalLatitude", "decimalLongitude", "geodeticDatum",
 	"verbatimElevation", "verbatimEventDate", "habitat", "samplingProtocol", "samplingEffort", "sampleSize_as_printed",
-	"recordedBy_as_printed", "field_pages", "source_inconsistency"]
+	"recordedBy_as_printed", "material_fate", "material_fate_as_printed", "field_pages", "source_inconsistency"]
 # caption_summary and skipped_reason are free text and are not compared
 TABLE_FIELDS = ["kind", "event_ids", "data_cells", "transcribed", "skipped_cells"]
 LABEL_FIELDS = ["row_identity", "column_axis", "presence_shown_as", "absence_shown_as", "symbols", "quantity_meaning",
@@ -41,13 +42,13 @@ LABEL_FIELDS = ["row_identity", "column_axis", "presence_shown_as", "absence_sho
 COLUMN_FIELDS = ["header_as_printed", "role", "event_id", "organismQuantityType_as_printed"]
 # record_id is a running number and notes is free text
 RECORD_FIELDS = ["event_id", "table_id", "column_id", "row_index", "position_in_cell", "event_detail_as_printed", "page",
-	"table_or_figure", "value_kind", "verbatimScientificName", "identificationQualifier", "family_as_printed", "family_source",
-	"order_as_printed", "order_source", "higher_group_as_printed", "vernacularName", "occurrenceStatus", "individualCount",
-	"organismQuantity", "organismQuantityType", "value_as_printed", "printed_code", "code_meaning", "code_legend_page",
-	"record_origin", "cited_source_as_printed", "recording_method_as_printed", "voucher_as_printed", "threat_status_as_printed",
+	"table_or_figure", "value_kind", "verbatimScientificName", "identificationQualifier", "name_in_full_as_printed",
+	"name_in_full_page", "name_status", "family_as_printed", "family_source", "order_as_printed", "order_source",
+	"higher_group_as_printed", "vernacularName", "occurrenceStatus", "individualCount", "organismQuantity",
+	"organismQuantityType", "value_as_printed", "printed_code", "record_origin", "cited_source_as_printed", "recording_method_as_printed", "voucher_as_printed", "threat_status_as_printed",
 	"threat_status_source_as_printed", "line_attributes", "source_inconsistency"]
 # Copied as printed, so compared character by character
-EXACT_FIELDS = {"verbatimScientificName", "identificationQualifier", "value_as_printed", "printed_code", "verbatimCoordinates",
+EXACT_FIELDS = {"verbatimScientificName", "identificationQualifier", "name_in_full_as_printed", "value_as_printed", "printed_code", "verbatimCoordinates",
 	"event_label_as_printed", "header_as_printed", "family_as_printed", "order_as_printed", "vernacularName"}
 MIN_NAME_SIMILARITY = 0.6
 
@@ -99,6 +100,13 @@ def kind_of(field, value_a, value_b):
 		return "name_mismatch"
 	if value_a in (None, "", []) or value_b in (None, "", []):
 		return "null_vs_text"
+	# One side cut short: a header or quantity type that stops in the middle (schema 2.0, rule 16)
+	if isinstance(value_a, str) and isinstance(value_b, str):
+		text_a, text_b = norm(value_a), norm(value_b)
+		if text_a and text_b != text_a and text_b.startswith(text_a):
+			return "a_is_prefix"
+		if text_b and text_a != text_b and text_a.startswith(text_b):
+			return "b_is_prefix"
 	if number_tokens(str(value_a)) != number_tokens(str(value_b)):
 		return "numbers_differ"
 	return "wording"
@@ -320,13 +328,14 @@ def compare_document(name):
 	return rows, len(records_a), len(records_b), len(pairs)
 
 
-def main(doc_ids):
+def main(doc_ids, out_dir=HERE):
 	if doc_ids:
 		names = [doc_id + ".json" for doc_id in doc_ids]
-		out_path = os.path.join(HERE, "diff_%s.csv" % doc_ids[0]) if len(doc_ids) == 1 else os.path.join(HERE, "diff_selected.csv")
+		out_path = os.path.join(out_dir, "diff_%s.csv" % doc_ids[0]) if len(doc_ids) == 1 else os.path.join(out_dir, "diff_selected.csv")
 	else:
 		names = sorted(os.path.basename(p) for p in glob.glob(os.path.join(A_DIR, "*.json")) if os.path.exists(os.path.join(B_DIR, os.path.basename(p))))
-		out_path = os.path.join(HERE, "diff.csv")
+		out_path = os.path.join(out_dir, "diff.csv")
+	os.makedirs(out_dir, exist_ok=True)
 	out_rows = []
 	for name in names:
 		rows, count_a, count_b, count_pairs = compare_document(name)
@@ -375,9 +384,19 @@ def self_check():
 	records_b = [{"table_id": "k2", "column_id": "c3", "verbatimScientificName": "X y", "value_as_printed": "15"},
 		{"table_id": "k2", "column_id": "c2", "verbatimScientificName": "X y", "value_as_printed": "4"}]
 	assert pair_columns(table_a, table_b, records_a, records_b) == {"c2": "c3", "c3": "c2"}
+	# A header cut in the middle on one side is flagged as such, a different header is not
+	assert kind_of("organismQuantityType", "FREQUÊNCIA CORRIGIDA", "FREQUÊNCIA CORRIGIDA DAS ESPÉCIES") == "a_is_prefix"
+	assert kind_of("columns.c3.header_as_printed", "Estação / A / 1", "Estação / A") == "b_is_prefix"
+	assert kind_of("organismQuantityType", "Frequência %", "número de capturas") == "wording"
 
 
 if __name__ == "__main__":
 	self_check()
 	if "--check" not in sys.argv:
-		main([arg for arg in sys.argv[1:] if not arg.startswith("--")])
+		# --out DIR writes the diff there instead of next to this file
+		arguments = sys.argv[1:]
+		out_dir = HERE
+		if "--out" in arguments:
+			out_dir = os.path.abspath(arguments[arguments.index("--out") + 1])
+			del arguments[arguments.index("--out"):arguments.index("--out") + 2]
+		main([arg for arg in arguments if not arg.startswith("--")], out_dir)

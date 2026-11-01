@@ -1,6 +1,12 @@
 # Merge the adjudicated documents into event.csv, occurrence.csv (Darwin Core names) and qa/decisions.csv, and print the
 # pilot numbers for RODADA.md
-# Usage: python -X utf8 method/merge.py   (paths are relative to the biodiversidade-piloto folder)
+# Usage: python -X utf8 method/merge.py [--out DIR]   (paths are relative to the biodiversidade-piloto folder; --out writes
+# event.csv, occurrence.csv and decisions.csv to DIR instead of the folder itself and qa/)
+#
+# Schema 2.0 (RODADA.md, "O que mudar no schema"): basisOfRecord comes from the event's material_fate, inherited like the
+# other event fields; code_meaning is no longer on the record, it is joined from table_level_labels.symbols by printed_code;
+# eventDate is derived here from the printed period, ISO 8601, and left empty when the period is ambiguous. A document
+# transcribed in 1.0-pilot still merges: its missing 2.0 fields read as null and basisOfRecord falls back to BASIS_OF_RECORD
 #
 # Copied from batata/method/merge.py for the biodiversity pilot (schema 1.0-pilot). Changed: trials became events (one
 # row per event in event.csv, eventID = doc_id#e1, parent first) and records became occurrences (occurrenceID = doc_id#n).
@@ -10,6 +16,7 @@
 # take the place of the "number misread" of the agriculture rounds. The self-checks and the long-copy check are the same
 import ast
 import csv
+import datetime
 import glob
 import json
 import os
@@ -25,8 +32,14 @@ MAX_QUOTE_WORDS = 15
 COMPARED_RECORD_FIELD_COUNT = len(compare.RECORD_FIELDS)
 COMPARED_EVENT_FIELD_COUNT = len(compare.EVENT_FIELDS)
 LICENSE_REPOSITORY = "CC BY-NC-ND 4.0 (aviso geral do repositório {repo}, não é licença do item)"
+LICENSE_NO_CC = "sem licença Creative Commons: o item só diz 'Acesso Aberto' (dc.rights, {repo})"
 
-# What each document says about its material. Only camargo2009 keeps the specimens
+# Schema 2.0: the class of material the study event prints -> basisOfRecord
+BASIS_OF_RECORD_BY_MATERIAL_FATE = {"deposited_in_collection": "PreservedSpecimen", "released_or_observed": "HumanObservation",
+	"vouchers_not_tied_to_records": "HumanObservation", "not_stated": "HumanObservation"}
+
+# 1.0-pilot only, for documents transcribed before material_fate existed. What each document says about its material.
+# Only camargo2009 keeps the specimens
 BASIS_OF_RECORD = {
 	"freydargas2014-peixes-taquari-pantanal-ms": "HumanObservation",  # p9: identified in the field, photographed and released
 	"nunes2009-aves-nhumirim-pantanal-ms": "HumanObservation",  # field lists of four observers and literature, no specimen
@@ -39,14 +52,20 @@ BASIS_OF_RECORD = {
 }
 
 # Pairs per document in the adjudication summaries, checked against A minus the A-only records
-EXPECTED_PAIRS = {"freydargas2014-peixes-taquari-pantanal-ms": 138, "nunes2009-aves-nhumirim-pantanal-ms": 189,
-	"bianconi2004-morcegos-fenix-pr": 56, "camargo2009-saturniidae-fragmentos-cerrado-ro-go": 94,
-	"miranda1982-herpetofauna-ouricuri-pe": 161, "calixto2014-fitossociologia-caatinga-petrolina-pe": 106,
-	"silva2009-mamiferos-aves-pedro-peixoto-ac": 231, "sandel2000-floristica-tapajos-km69-pa": 176}
+# Full round of 20 (01/11), from the adjudication summaries
+EXPECTED_PAIRS = {"mai2010-peixes-currais-litoral-pi": 118, "queiroga2018-peixes-vereda-uberlandia-mg": 36,
+	"winckler2011-peixes-arroz-capao-do-leao-rs": 12, "mauricio2018-aves-serra-dos-tapes-rs": 193,
+	"carvalho2013-aves-aquaticas-iguatama-mg": 184, "silva2009b-mamiferos-aves-iracema-am": 254,
+	"dias2006-mamiferos-embrapa-florestas-colombo-pr": 50, "nunes2009-mamiferos-serra-do-brigadeiro-mg": 84,
+	"silveira2010-morcegos-nhumirim-ms": 36, "gordo2003-anuros-nhumirim-ms": 19, "carosini2013-anuros-serrapilheira-caratinga-mg": 84,
+	"santos2019-escarabeideos-placido-de-castro-ac": 15, "rodrigues2010-besouros-coprofagos-nhumirim-ms": 35,
+	"pereira2011-borboletas-araguari-mg": 27, "viana2020-esfingideos-saturnideos-pau-furado-mg": 130,
+	"lopes2010-abelhas-plantas-apicolas-teresina-pi": 172, "vieira2002-fitossociologia-machadinho-ro": 70,
+	"tourinho1998-manguezal-braganca-pa": 87, "pereira2012-caatinga-fazenda-tamandua-pb": 63, "rego2008-abelhas-sem-ferrao-balsas-ma": 19}
 
 # Event fields a child takes from its parent when it prints nothing of its own (rule 5)
 INHERITED_EVENT_FIELDS = ["verbatimLocality", "municipality", "stateProvince", "country", "verbatimEventDate", "habitat",
-	"samplingProtocol", "recordedBy_as_printed"]
+	"samplingProtocol", "recordedBy_as_printed", "material_fate", "material_fate_as_printed"]
 # schema event field -> event.csv column
 EVENT_COLUMNS = {"event_level": "eventType", "event_label_as_printed": "event_label_as_printed",
 	"verbatimLocality": "verbatimLocality", "municipality": "municipality", "stateProvince": "stateProvince", "country": "country",
@@ -54,21 +73,36 @@ EVENT_COLUMNS = {"event_level": "eventType", "event_label_as_printed": "event_la
 	"decimalLatitude": "decimalLatitude", "decimalLongitude": "decimalLongitude", "geodeticDatum": "geodeticDatum",
 	"verbatimElevation": "verbatimElevation", "verbatimEventDate": "verbatimEventDate", "habitat": "habitat",
 	"samplingProtocol": "samplingProtocol", "samplingEffort": "samplingEffort", "sampleSize_as_printed": "sampleSize_as_printed",
-	"recordedBy_as_printed": "recordedBy", "notes": "eventRemarks", "source_inconsistency": "source_inconsistency",
+	"recordedBy_as_printed": "recordedBy", "material_fate": "material_fate", "material_fate_as_printed": "material_fate_as_printed",
+	"notes": "eventRemarks", "source_inconsistency": "source_inconsistency",
 	"field_pages": "field_pages"}
 # schema record field -> occurrence.csv column. Darwin Core names first, then ours for what Darwin Core has no term for
 RECORD_COLUMNS = {"verbatimScientificName": "scientificName", "identificationQualifier": "identificationQualifier",
-	"family_as_printed": "family", "order_as_printed": "order", "higher_group_as_printed": "higherClassification",
+	"name_in_full_as_printed": "name_in_full_as_printed", "name_in_full_page": "name_in_full_page", "name_status": "name_status", "family_as_printed": "family", "order_as_printed": "order", "higher_group_as_printed": "higherClassification",
 	"vernacularName": "vernacularName", "occurrenceStatus": "occurrenceStatus", "individualCount": "individualCount",
 	"organismQuantity": "organismQuantity", "organismQuantityType": "organismQuantityType", "notes": "occurrenceRemarks",
 	"line_attributes": "dynamicProperties", "value_kind": "value_kind", "value_as_printed": "value_as_printed",
-	"printed_code": "printed_code", "code_meaning": "code_meaning", "event_detail_as_printed": "event_detail_as_printed",
+	"printed_code": "printed_code", "event_detail_as_printed": "event_detail_as_printed",
 	"record_origin": "record_origin", "cited_source_as_printed": "cited_source_as_printed",
 	"threat_status_as_printed": "threat_status_as_printed", "threat_status_source_as_printed": "threat_status_source_as_printed",
 	"source_inconsistency": "source_inconsistency"}
 DECISION_TEXT_COLUMNS = ["a_value", "b_value", "final_value", "evidence"]
 NOT_SOURCE_TEXT = {"bibliographicCitation", "license", "occurrenceID", "eventID", "parentEventID", "doc_id", "source_file",
-	"decision_ids", "inherited"}
+	"decision_ids", "inherited", "eventDate", "eventDate_derivation", "basisOfRecord_source"}
+
+# Printed period -> ISO 8601 eventDate. Only the shapes below are read; anything else stays empty
+MONTH_NUMBER = {"janeiro": 1, "fevereiro": 2, "março": 3, "marco": 3, "abril": 4, "maio": 5, "junho": 6, "julho": 7,
+	"agosto": 8, "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12}
+MONTH_PATTERN = "(janeiro|fevereiro|março|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)"
+DATE_PATTERNS = [
+	# '3 de maio e 16 de junho de 2006', 'julho de 2002 e junho de 2003', 'dezembro a março de 1981'
+	("month_range", re.compile(rf"(?:(\d{{1,2}}) de )?{MONTH_PATTERN}(?: de (\d{{4}}))? (?:e|a|até) (?:(\d{{1,2}}) de )?{MONTH_PATTERN} de (\d{{4}})")),
+	# '2002 a 2003'
+	("year_range", re.compile(r"(\d{4}) (?:a|e|até|-|–) (\d{4})")),
+	# '16 de junho de 2006', 'março de 2013'
+	("month", re.compile(rf"(?:(\d{{1,2}}) de )?{MONTH_PATTERN} de (\d{{4}})")),
+	("year", re.compile(r"(\d{4})")),
+]
 
 NAME_FIELDS = {"verbatimScientificName", "identificationQualifier"}
 HIGHER_TAXON_FIELDS = {"family_as_printed", "order_as_printed", "higher_group_as_printed", "family_source", "order_source"}
@@ -144,11 +178,19 @@ def FindLongCopies(text, pdf_shingles):
 def BuildCitation(document):
 	authors = "; ".join(document["authors"]).rstrip(".")
 	title = document["title"].rstrip(".")
+	# University dissertations (DSpace 7): the item's own citation repeats author and title, sometimes in English, so
+	# the citation is built from the metadata, with the university from the repository name
+	if document["type"].startswith("Disserta"):
+		university = document["repository"].split()[-1]
+		return f"{authors}. {title}. {document['year']}. Dissertação (Mestrado) - {university}. Disponível em: {document['record_url']}"
 	return f"{authors}. {title}. {document['citation'].rstrip('.')}. Disponível em: {document['record_url']}"
 
 
 def BuildLicense(document):
 	license_text = LICENSE_REPOSITORY.format(repo=document["repository"])
+	# UFU, UFV and UFMG items carry only dc.rights 'Acesso Aberto', no Creative Commons footer
+	if "Creative Commons" not in (document.get("license_shown") or ""):
+		license_text = LICENSE_NO_CC.format(repo=document["repository"])
 	copyright_found = document.get("publisher_copyright_in_pdf") or ""
 	# miranda1982 is an image scan: the search could not run, which is not a printed notice
 	if "image scan" in copyright_found:
@@ -203,6 +245,65 @@ def CellText(value):
 	return value
 
 
+def DeriveEventDate(printed_date):
+	# ISO 8601 date or interval from the printed period; "" when the print is ambiguous or has a shape we do not read
+	if not printed_date:
+		return ""
+	text = re.sub(r"\s+", " ", printed_date.lower())
+	for shape, pattern in DATE_PATTERNS:
+		match = pattern.search(text)
+		if match is None:
+			continue
+		# Another year or month outside the match means two periods or a partial one: do not pick one
+		rest = text[:match.start()] + " " + text[match.end():]
+		if re.search(r"\d{4}", rest) or re.search(MONTH_PATTERN, rest):
+			return ""
+		groups = match.groups()
+		if shape == "month_range":
+			start_day, start_month, start_year, end_day, end_month, end_year = groups
+			# 'dezembro a março de 1981' prints one year: the start takes it, and a start after the end is then ambiguous
+			start = (int(start_year or end_year), MONTH_NUMBER[start_month], int(start_day) if start_day else None)
+			end = (int(end_year), MONTH_NUMBER[end_month], int(end_day) if end_day else None)
+		elif shape == "year_range":
+			start, end = (int(groups[0]), None, None), (int(groups[1]), None, None)
+		elif shape == "month":
+			start = end = (int(groups[2]), MONTH_NUMBER[groups[1]], int(groups[0]) if groups[0] else None)
+		else:
+			start = end = (int(groups[0]), None, None)
+		points = []
+		for year, month, day in (start, end):
+			if not 1800 <= year <= 2100:
+				return ""
+			try:
+				datetime.date(year, month or 1, day or 1)
+			except ValueError:
+				return ""
+			points.append(f"{year:04d}" + (f"-{month:02d}" if month else "") + (f"-{day:02d}" if day else ""))
+		if (start[0], start[1] or 0, start[2] or 0) > (end[0], end[1] or 0, end[2] or 0):
+			return ""
+		return points[0] if points[0] == points[1] else f"{points[0]}/{points[1]}"
+	return ""
+
+
+def CodeMeaning(printed_code, table_symbols, document_symbols):
+	# Meaning of the printed code from table_level_labels.symbols: the table's own list first, then any table of the
+	# document (a continued table often lists its symbols on the first page only). A cell with several codes ('n t')
+	# gets each one, split by ' | ' so two meanings are never read as one run of source text
+	if not printed_code:
+		return ""
+	def MeaningOf(code):
+		for symbols in (table_symbols, document_symbols):
+			for symbol in symbols:
+				if symbol["symbol"] == code and symbol["meaning_as_printed"]:
+					return symbol["meaning_as_printed"]
+		return None
+	whole = MeaningOf(printed_code)
+	if whole:
+		return whole
+	codes = [code for code in re.split(r"[\s,;]+", printed_code) if code]
+	return " | ".join(f"{code}: {MeaningOf(code)}" for code in codes if MeaningOf(code))
+
+
 def EventRows(doc_id, events, citation, license_text):
 	events_by_id = {event["event_id"]: event for event in events}
 	rows = []
@@ -211,9 +312,9 @@ def EventRows(doc_id, events, citation, license_text):
 			"parentEventID": f"{doc_id}#{event['parent_event_id']}" if event["parent_event_id"] else ""}
 		for field, column in EVENT_COLUMNS.items():
 			row[column] = CellText(event[field])
-		row["countryCode"] = "BR"
 		# Null field: walk up to the first ancestor that prints it
 		inherited = []
+		date_event_id = event["event_id"]
 		for field in INHERITED_EVENT_FIELDS:
 			ancestor = event
 			while ancestor[field] is None and ancestor["parent_event_id"]:
@@ -221,6 +322,17 @@ def EventRows(doc_id, events, citation, license_text):
 			if ancestor is not event and ancestor[field] is not None:
 				row[EVENT_COLUMNS[field]] = CellText(ancestor[field])
 				inherited.append(f"{field}:{ancestor['event_id']}")
+				if field == "verbatimEventDate":
+					date_event_id = ancestor["event_id"]
+		# eventDate is ours, derived from the printed period, and says so in eventDate_derivation
+		row["eventDate"] = DeriveEventDate(row["verbatimEventDate"])
+		if row["eventDate"]:
+			row["eventDate_derivation"] = f"derived by merge.py from verbatimEventDate of {date_event_id}"
+		elif row["verbatimEventDate"]:
+			row["eventDate_derivation"] = "not derived: printed period ambiguous or in a shape merge.py does not read"
+		else:
+			row["eventDate_derivation"] = ""
+		row["countryCode"] = "BR"
 		row["inherited"] = "; ".join(inherited)
 		row["doc_id"] = doc_id
 		row["origin"] = event.get("origin") or ""
@@ -232,9 +344,12 @@ def EventRows(doc_id, events, citation, license_text):
 
 
 def main():
+	# --out DIR keeps the folder's own CSVs untouched (test runs)
+	out_dir = os.path.abspath(sys.argv[sys.argv.index("--out") + 1]) if "--out" in sys.argv else None
 	schema = json.load(open(os.path.join(ROOT, "schema.json"), encoding="utf-8"))
 	record_fields = schema["$defs"]["record"]["required"]
 	event_fields = schema["$defs"]["event"]["required"]
+	legacy_fields_filled = Counter()
 	sources = json.load(open(os.path.join(ROOT, "sources.json"), encoding="utf-8"))
 	documents_by_id = {document["id"]: document for document in sources["documents"]}
 
@@ -248,6 +363,15 @@ def main():
 		shingles_by_doc[doc_id] = LoadPdfWordShingles(os.path.join(ROOT, document["pdf_path"]))
 		adjudicated = json.load(open(adjudicated_path, encoding="utf-8"))
 		assert adjudicated["doc_id"] == doc_id
+		# A document transcribed in an older schema has no 2.0 fields: they read as null, and the count is printed
+		is_legacy = adjudicated.get("schema_version") != schema["version"]
+		if is_legacy:
+			for items, fields in ((adjudicated["events"], event_fields), (adjudicated["records"], record_fields)):
+				for item in items:
+					for field in fields:
+						if field not in item:
+							item[field] = None
+							legacy_fields_filled[(adjudicated.get("schema_version"), field)] += 1
 		citation, license_text = BuildCitation(document), BuildLicense(document)
 		events_by_id = {event["event_id"]: event for event in adjudicated["events"]}
 		# Every event has every schema field, and its parent is an event of the same document
@@ -255,8 +379,9 @@ def main():
 			assert all(field in event for field in event_fields), (doc_id, event.get("event_id"))
 			assert event["parent_event_id"] is None or event["parent_event_id"] in events_by_id, (doc_id, event["event_id"])
 		event_rows += EventRows(doc_id, adjudicated["events"], citation, license_text)
-		recorded_by = {row["eventID"]: row["recordedBy"] for row in event_rows if row["doc_id"] == doc_id}
+		event_row_by_id = {row["eventID"]: row for row in event_rows if row["doc_id"] == doc_id}
 		tables_by_id = {table["table_id"]: table for table in adjudicated["tables"]}
+		document_symbols = [symbol for table in adjudicated["tables"] for symbol in (table.get("table_level_labels") or {}).get("symbols") or []]
 		for record_number, record in enumerate(adjudicated["records"], start=1):
 			# Every schema field is there, and the record points to an event, a table and a column of this document
 			assert all(field in record for field in record_fields), (doc_id, record_number)
@@ -265,13 +390,27 @@ def main():
 			columns_by_id = {column["column_id"]: column for column in tables_by_id[record["table_id"]].get("columns") or []}
 			# A species-list line has no event column (miranda1982 Anexo 1, sandel2000 Anexo 1)
 			assert not columns_by_id or record["column_id"] in columns_by_id or (record["column_id"] is None and record["value_kind"] == "list_line"), (doc_id, record_number, record["table_id"], record["column_id"])
-			assert record["verbatimScientificName"], (doc_id, record_number)
+			# An empty name cell is kept when it is illegible (rule 27) or prints no name at all (rule 12, name_status)
+			assert record["verbatimScientificName"] or record["value_kind"] == "illegible" or record["name_status"] == "incomplete_in_print", (doc_id, record_number)
 			event_id = f"{doc_id}#{record['event_id']}"
-			row = {"occurrenceID": f"{doc_id}#{record_number}", "eventID": event_id, "basisOfRecord": BASIS_OF_RECORD[doc_id]}
+			event_row = event_row_by_id[event_id]
+			# basisOfRecord from the material fate the event prints (inherited from the study event)
+			if event_row["material_fate"]:
+				basis_of_record = BASIS_OF_RECORD_BY_MATERIAL_FATE[event_row["material_fate"]]
+				basis_source = f"material_fate {event_row['material_fate']}"
+			else:
+				assert is_legacy, f"{doc_id}: no material_fate on {record['event_id']} or its parents"
+				basis_of_record = BASIS_OF_RECORD[doc_id]
+				basis_source = f"merge.py BASIS_OF_RECORD, schema {adjudicated.get('schema_version')} has no material_fate"
+			row = {"occurrenceID": f"{doc_id}#{record_number}", "eventID": event_id, "basisOfRecord": basis_of_record,
+				"basisOfRecord_source": basis_source, "eventDate": event_row["eventDate"],
+				"eventDate_derivation": event_row["eventDate_derivation"]}
 			for field, column in RECORD_COLUMNS.items():
 				row[column] = CellText(record[field])
 				if column == "scientificName":
-					row["recordedBy"] = recorded_by[event_id]
+					row["recordedBy"] = event_row["recordedBy"]
+			table_symbols = (tables_by_id[record["table_id"]].get("table_level_labels") or {}).get("symbols") or []
+			row["code_meaning"] = CodeMeaning(record["printed_code"], table_symbols, document_symbols)
 			row["doc_id"] = doc_id
 			row["page"] = record["page"]
 			row["table_or_figure"] = record["table_or_figure"]
@@ -286,14 +425,16 @@ def main():
 		stats[doc_id]["record_tables"] = sum(1 for table in adjudicated["tables"] if table.get("table_level_labels"))
 		stats[doc_id]["columns"] = sum(len(table.get("columns") or []) for table in adjudicated["tables"])
 
-	event_columns = ["eventID", "parentEventID"] + list(EVENT_COLUMNS.values()) + ["countryCode", "inherited", "doc_id", "origin",
-		"decision_ids", "bibliographicCitation", "license"]
-	with open(os.path.join(ROOT, "event.csv"), "w", encoding="utf-8", newline="") as output_file:
+	event_columns = ["eventID", "parentEventID"] + list(EVENT_COLUMNS.values()) + ["eventDate", "eventDate_derivation", "countryCode",
+		"inherited", "doc_id", "origin", "decision_ids", "bibliographicCitation", "license"]
+	csv_dir = out_dir or ROOT
+	os.makedirs(csv_dir, exist_ok=True)
+	with open(os.path.join(csv_dir, "event.csv"), "w", encoding="utf-8", newline="") as output_file:
 		writer = csv.DictWriter(output_file, fieldnames=event_columns)
 		writer.writeheader()
 		writer.writerows(event_rows)
 	occurrence_columns = list(occurrence_rows[0].keys())
-	with open(os.path.join(ROOT, "occurrence.csv"), "w", encoding="utf-8", newline="") as output_file:
+	with open(os.path.join(csv_dir, "occurrence.csv"), "w", encoding="utf-8", newline="") as output_file:
 		writer = csv.DictWriter(output_file, fieldnames=occurrence_columns)
 		writer.writeheader()
 		writer.writerows(occurrence_rows)
@@ -311,8 +452,9 @@ def main():
 	for row in decision_rows:
 		for column in decision_columns:
 			row.setdefault(column, "")
-	os.makedirs(os.path.join(ROOT, "qa"), exist_ok=True)
-	with open(os.path.join(ROOT, "qa", "decisions.csv"), "w", encoding="utf-8", newline="") as output_file:
+	decisions_dir = out_dir or os.path.join(ROOT, "qa")
+	os.makedirs(decisions_dir, exist_ok=True)
+	with open(os.path.join(decisions_dir, "decisions.csv"), "w", encoding="utf-8", newline="") as output_file:
 		writer = csv.DictWriter(output_file, fieldnames=decision_columns)
 		writer.writeheader()
 		writer.writerows(decision_rows)
@@ -451,7 +593,13 @@ def main():
 	print("decision rows by category:", sorted(Counter((CategoryOf(row), row["decision"]) for row in decision_rows).items()))
 	print("both_acceptable fields:", Counter(row["field"] for row in decision_rows if row["decision"] == "both_acceptable").most_common(12))
 	print("origin:", Counter(row["origin"] for row in occurrence_rows))
-	print("basisOfRecord:", Counter(row["basisOfRecord"] for row in occurrence_rows))
+	print("basisOfRecord:", Counter((row["basisOfRecord"], row["basisOfRecord_source"]) for row in occurrence_rows))
+	print("eventDate:", sum(1 for row in event_rows if row["eventDate"]), "of", len(event_rows), "events,",
+		sum(1 for row in occurrence_rows if row["eventDate"]), "of", len(occurrence_rows), "occurrences;",
+		Counter((row["verbatimEventDate"], row["eventDate"]) for row in event_rows if row["verbatimEventDate"] and not row["inherited"].count("verbatimEventDate")).most_common(8))
+	print("code_meaning joined from symbols:", sum(1 for row in occurrence_rows if row["code_meaning"]), "of",
+		sum(1 for row in occurrence_rows if row["printed_code"]), "with printed_code")
+	print("fields missing in older-schema documents, read as null:", dict(legacy_fields_filled))
 	print("occurrenceStatus:", Counter(row["occurrenceStatus"] for row in occurrence_rows))
 	print("value_kind:", Counter(row["value_kind"] for row in occurrence_rows))
 	print("record_origin:", Counter(row["record_origin"] for row in occurrence_rows))
@@ -506,6 +654,20 @@ def main():
 	test_events[0].update(verbatimEventDate="março de 2013", verbatimCoordinates="18°S")
 	child = EventRows("t", test_events, "", "")[1]
 	assert child["verbatimEventDate"] == "março de 2013" and child["inherited"] == "verbatimEventDate:e1" and child["verbatimCoordinates"] == ""
+	assert child["eventDate"] == "2013-03" and child["eventDate_derivation"].endswith("of e1")
+	# eventDate: the pilot's printed periods, and the ambiguous ones stay empty
+	assert DeriveEventDate("entre março e junho de 2013") == "2013-03/2013-06"
+	assert DeriveEventDate("entre julho de 2002 e junho de 2003") == "2002-07/2003-06"
+	assert DeriveEventDate("31 dias, compreendido entre 3 de maio e 16 de junho de 2006") == "2006-05-03/2006-06-16"
+	assert DeriveEventDate("2004") == "2004" and DeriveEventDate("2002 a 2003") == "2002/2003"
+	assert DeriveEventDate("dezembro a março de 1981") == ""  # which December?
+	assert DeriveEventDate("iniciados em 1999 ... concluídos em 2001 ... sempre no período entre julho e dezembro") == ""
+	assert DeriveEventDate("iniciados em 1999 ... sempre no período entre julho e dezembro") == ""
+	assert DeriveEventDate("Dia 1") == "" and DeriveEventDate("31 de fevereiro de 2006") == ""
+	# code_meaning: the table's symbol first, the document's next, several codes split
+	symbols = [{"symbol": "n", "meaning_as_printed": "campo de A.P. Nunes"}, {"symbol": "t", "meaning_as_printed": "campo de F. Tizianel"}]
+	assert CodeMeaning("n", symbols, []) == "campo de A.P. Nunes" and CodeMeaning("n", [], symbols) == "campo de A.P. Nunes"
+	assert CodeMeaning("n t", symbols, []) == "n: campo de A.P. Nunes | t: campo de F. Tizianel" and CodeMeaning("SCS", symbols, []) == ""
 	assert not long_copies, f"{len(long_copies)} cells copy more than {MAX_QUOTE_WORDS} words of the source: rewrite them in adjudicated/"
 
 
